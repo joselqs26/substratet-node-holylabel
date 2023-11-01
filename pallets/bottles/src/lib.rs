@@ -30,13 +30,23 @@ pub mod pallet {
     }
 
     #[pallet::storage]
-    pub(super) type BottleTransactions<T: Config> =
+    pub(super) type TransactionsCounts<T: Config> =
         StorageMap<
             _,
             Twox64Concat,
             [u8; 16],
-            Vec<BottleTransaction<T>>,
-            ValueQuery
+            u32,
+        >;
+
+    #[pallet::storage]
+    pub(super) type BottleTransactions<T: Config> =
+        StorageDoubleMap<
+            _,
+            Twox64Concat,
+            [u8; 16],
+            Twox64Concat,
+            u32,
+            BottleTransaction<T>
         >;
 
     #[pallet::error]
@@ -85,28 +95,27 @@ pub mod pallet {
                 longitude,
             };
 
-            if BottleTransactions::<T>::contains_key(&id) {
-                let mut transactions = BottleTransactions::<T>::get(&id);
-                transactions.push(transaction);
-                // Almacena la lista actualizada de transacciones
-                BottleTransactions::<T>::set(&id, transactions);
-            } else {
-                let mut transactions = Vec::new();
-                transactions.push(transaction);
-                
-                BottleTransactions::<T>::insert(&id, transactions);
-            }
+            if TransactionsCounts::<T>::contains_key(&id) {
+                let count_option = TransactionsCounts::<T>::get(&id);
 
+                let count = match count_option {
+                    Some(count_option) => count_option as u32,
+                    None => 0 as u32, // Valor por defecto si el Option es None
+                };
+                
+                BottleTransactions::<T>::insert(&id, count, transaction);
+                TransactionsCounts::<T>::mutate(&id, |value| {
+                    match value {
+                        Some(value) => *value + 1,
+                        None => 0, // Valor por defecto si el Option es None
+                    };
+                });
+            } else {
+                BottleTransactions::<T>::insert(&id, 0 as u32, transaction);
+                TransactionsCounts::<T>::set(&id, Some(1 as u32));
+            }
         
 			Self::deposit_event(Event::BottleTransferred(
-                id, 
-                sender.clone(), 
-                // milliseconds_timestamp, 
-                latitude, 
-                longitude
-            ));
-
-            Self::deposit_event(Event::BottleTransferred(
                 id, 
                 sender.clone(), 
                 // milliseconds_timestamp, 
@@ -126,6 +135,6 @@ pub mod pallet {
 		) -> DispatchResult {
             let _ = Self::mint(origin, id, latitude, longitude);
 			Ok(())
-		}	
+		}
     }
 }
